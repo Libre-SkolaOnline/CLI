@@ -1,7 +1,7 @@
 import logging
 from textual import work
 from textual.app import App, ComposeResult, on
-from textual.containers import Center, Vertical
+from textual.containers import Center, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import (
     Button,
@@ -12,6 +12,7 @@ from textual.widgets import (
     Label,
     TabPane,
     TabbedContent,
+    Static,
 )
 
 from .api import SolApi
@@ -68,6 +69,63 @@ class LoginScreen(Screen):
         btn.label = "Přihlásit se"
 
 
+class MarkDetailScreen(Screen):
+    CSS = """
+    MarkDetailScreen {
+        align: center middle;
+    }
+    #detail-box {
+        width: 80;
+        height: auto;
+        border: heavy $primary;
+        padding: 2;
+        background: $panel;
+    }
+    .detail-label {
+        margin-bottom: 1;
+    }
+    """
+
+    def __init__(self, api: SolApi, mark_id: str, mark_data: dict):
+        super().__init__()
+        self.api = api
+        self.mark_id = mark_id
+        self.mark_data = mark_data
+
+    def compose(self) -> ComposeResult:
+        with Center():
+            with VerticalScroll(id="detail-box"):
+                yield Label("Detail známky", classes="detail-label")
+                yield Static(id="detail-content")
+                yield Button("Zavřít", variant="primary", id="close-btn")
+
+    def on_mount(self):
+        self.load_detail()
+
+    @work(thread=True)
+    def load_detail(self):
+        detail = self.api.get_mark_detail(self.mark_id)
+        self.app.call_from_thread(self.show_detail, detail)
+
+    def show_detail(self, detail):
+        if not detail:
+            content = "[red]Nepodařilo se načíst detail známky[/]"
+        else:
+            lines = [
+                f"[bold]Známka:[/bold] {detail.get('markText', '?')}",
+                f"[bold]Předmět:[/bold] {detail.get('subjectName', '?')}",
+                f"[bold]Téma:[/bold] {detail.get('theme', '-')}",
+                f"[bold]Váha:[/bold] {detail.get('weight', '-')}",
+                f"[bold]Učitel:[/bold] {detail.get('teacherDisplayName', '-')}",
+            ]
+            content = "\n\n".join(lines)
+        self.query_one("#detail-content", Static).update(content)
+
+    @on(Button.Pressed, "#close-btn")
+    def close_screen(self):
+        self.app.pop_screen()
+
+
 class Dashboard(Screen):
     CSS = """
     DataTable {
@@ -80,6 +138,7 @@ class Dashboard(Screen):
     def __init__(self, api: SolApi):
         super().__init__()
         self.api = api
+        self.grades_data = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -123,6 +182,7 @@ class Dashboard(Screen):
     @work(thread=True)
     def work_grades(self):
         data = self.api.get_grades()
+        self.grades_data = data
         self.app.call_from_thread(self.update_grades, data)
 
     @work(thread=True)
@@ -177,6 +237,17 @@ class Dashboard(Screen):
         else:
             dt.add_row("---", "Žádné známky", "", "", "")
             self.query_one("#status_bar", Label).update("Žádné známky.")
+
+    @on(DataTable.RowSelected, "#grades_table")
+    def on_grade_selected(self, event: DataTable.RowSelected):
+        if not self.grades_data or "marks" not in self.grades_data:
+            return
+        row_index = event.cursor_row
+        if row_index < len(self.grades_data["marks"]):
+            mark = self.grades_data["marks"][row_index]
+            mark_id = mark.get("id")
+            if mark_id:
+                self.app.push_screen(MarkDetailScreen(self.api, mark_id, mark))
 
     def update_schedule(self, data):
         dt = self.query_one("#schedule_table", DataTable)

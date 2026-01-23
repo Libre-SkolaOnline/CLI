@@ -1,6 +1,7 @@
 from .behaviors import get_behaviors
 from .client import ApiClient
 from .homeworks import get_homework
+from .mark_detail import get_mark_detail
 from .marks import get_grades
 from .messages import get_messages
 from .schedule import get_schedule
@@ -36,6 +37,12 @@ class SolApi:
 
     def get_behaviors(self):
         return get_behaviors(self)
+
+    def get_mark_detail(self, mark_id):
+        return get_mark_detail(self, mark_id)
+
+    def get_notifications(self):
+        return get_notifications(self)
 
     @staticmethod
     def clean_html(text):
